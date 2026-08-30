@@ -114,8 +114,16 @@ struct steamcompmgr_win_t {
 	bool isSteamStreamingClientVideo = false;
 	uint32_t inputFocusMode = 0;
 	uint32_t appID = 0;
+	uint32_t steamAppID = 0;
 	bool isOverlay = false;
 	bool isExternalOverlay = false;
+
+	bool bIsSteamPid = false;
+	bool bIsSteamWebHelperPid = false;
+	bool bIsVRWebHelperPid = false;
+	bool bIsDolphin = false; // File Manager
+
+	std::string pid_name;
 
 	bool IsAnyOverlay() const
 	{
@@ -144,7 +152,7 @@ struct steamcompmgr_win_t {
 	bool bHasHadNonSRGBColorSpace = false;
 	bool bHasHDRColorspace = false;
 
-	bool nudged = false;
+	bool placed = false;
 	bool ignoreOverrideRedirect = false;
 
 	bool unlockedForFrameCallback = false;
@@ -157,6 +165,7 @@ struct steamcompmgr_win_t {
 
 	std::optional<uint64_t> oulTargetVROverlay;
 	std::shared_ptr<gamescope::IBackendPlane> pForwarderPlane;
+	bool bNeedsForwarding = false;
 
 	steamcompmgr_xwayland_win_t& xwayland() { return std::get<steamcompmgr_xwayland_win_t>(_window_types); }
 	const steamcompmgr_xwayland_win_t& xwayland() const { return std::get<steamcompmgr_xwayland_win_t>(_window_types); }
@@ -175,6 +184,14 @@ struct steamcompmgr_win_t {
 			return &g_steamcompmgr_xdg_focus;
 		else
 			return nullptr;
+	}
+
+	void Raise() const
+	{
+		if (type != steamcompmgr_win_type_t::XWAYLAND)
+			return;
+
+		XRaiseWindow(xwayland().ctx->dpy, xwayland().id);
 	}
 
 	Rect GetGeometry() const
@@ -223,6 +240,14 @@ struct steamcompmgr_win_t {
 			return nullptr;
 	}
 
+	const char *debug_name() const
+	{
+		if ( title )
+			return title->c_str();
+
+		return pid_name.c_str();
+	}
+
 	gamescope::VirtualConnectorKey_t GetVirtualConnectorKey( gamescope::VirtualConnectorStrategy eStrategy )
 	{
 		switch ( eStrategy )
@@ -232,7 +257,12 @@ struct steamcompmgr_win_t {
 		case gamescope::VirtualConnectorStrategies::SteamControlled:
 			return 0;
 		case gamescope::VirtualConnectorStrategies::PerAppId:
-			if ( this->appID )
+			if ( this->isSteamLegacyBigPicture )
+			{
+				// Steam Bootstrapper
+				return gamescope::k_ulSteamBootstrapperKey;
+			}
+			else if ( this->appID )
 			{
 				return static_cast<gamescope::VirtualConnectorKey_t>( this->appID );
 			}

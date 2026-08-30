@@ -26,6 +26,9 @@ extern bool g_bForceInternal;
 extern bool g_bUseRotationShader;
 extern bool g_bEnableDRMRotationShader;
 
+extern bool g_bForceCompositionRotation;
+extern uint32_t g_uOutputRotation;
+
 extern bool g_bFullscreen;
 
 extern bool g_bGrabbed;
@@ -74,6 +77,7 @@ extern bool g_bExposeWayland;
 extern bool g_bRt;
 
 extern int g_nXWaylandCount;
+extern bool g_bNoTouchPointerEmulation;
 
 extern uint32_t g_preferVendorID;
 extern uint32_t g_preferDeviceID;
