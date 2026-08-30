@@ -26,14 +26,19 @@ extern LogScope xwm_log;
 
 struct focus_t
 {
-	steamcompmgr_win_t				*focusWindow;
-	steamcompmgr_win_t				*inputFocusWindow;
-	uint32_t		inputFocusMode;
-	steamcompmgr_win_t				*overlayWindow;
-	steamcompmgr_win_t				*externalOverlayWindow;
-	steamcompmgr_win_t				*notificationWindow;
-	steamcompmgr_win_t				*overrideWindow;
-	bool			outdatedInteractiveFocus;
+	steamcompmgr_win_t				*focusWindow = nullptr;
+	steamcompmgr_win_t				*inputFocusWindow = nullptr;
+	uint32_t		inputFocusMode = 0;
+	steamcompmgr_win_t				*overlayWindow = nullptr;
+	steamcompmgr_win_t				*externalOverlayWindow = nullptr;
+	steamcompmgr_win_t				*notificationWindow = nullptr;
+	steamcompmgr_win_t				*overrideWindow = nullptr;
+	// The previous override, kept painted beneath a new one. Global focus only.
+	steamcompmgr_win_t				*overrideUnderlayWindow = nullptr;
+	steamcompmgr_win_t				*overrideWindowMouse = nullptr;
+	// Same-app helpers from other processes (eg. Xalia's highlight), painted above the override.
+	std::vector<steamcompmgr_win_t*>	decorationWindows;
+	bool			outdatedInteractiveFocus = false;
 	bool			bResetToCorner = false;
 	bool			bResetToCenter = false;
 
@@ -94,6 +99,8 @@ struct xwayland_ctx_t final : public gamescope::IWaitable
 
 	bool force_windows_fullscreen = false;
 
+	std::optional<bool> obTouchPointerEmulation;
+
 	std::vector< steamcompmgr_win_t* > GetPossibleFocusWindows();
 	void DetermineAndApplyFocus( const std::vector< steamcompmgr_win_t* > &vecPossibleFocusWindows );
 
@@ -117,7 +124,7 @@ struct xwayland_ctx_t final : public gamescope::IWaitable
 		Atom winNormalAtom;
 		Atom sizeHintsAtom;
 		Atom netWMStateFullscreenAtom;
-		Atom activeWindowAtom;
+		Atom netActiveWindowAtom;
 		Atom netWMStateAtom;
 		Atom WMTransientForAtom;
 		Atom netWMStateHiddenAtom;
@@ -163,6 +170,7 @@ struct xwayland_ctx_t final : public gamescope::IWaitable
 		Atom gamescopeXWaylandModeControl;
 
 		Atom gamescopeFPSLimit;
+		Atom gamescopeLimiterFeedback;
 		Atom gamescopeDynamicRefresh[gamescope::GAMESCOPE_SCREEN_TYPE_COUNT];
 		Atom gamescopeLowLatency;
 
@@ -243,6 +251,9 @@ struct xwayland_ctx_t final : public gamescope::IWaitable
 		Atom gamescopeDisplayRefreshRateFeedback;
 		Atom gamescopeDisplayDynamicRefreshBasedOnGamePresence;
 
+		Atom gamescopeMainSteamVROverlay;
+		Atom steamosTouchPointerEmulation;
+
 		Atom wineHwndStyle;
 		Atom wineHwndStyleEx;
 
@@ -252,6 +263,8 @@ struct xwayland_ctx_t final : public gamescope::IWaitable
 
 		Atom gamescopeFrameHalveAtom;
 		Atom gamescopeDPMS;
+		Atom wm_protocols;
+		Atom wm_delete_window;
 	} atoms;
 
 	bool HasQueuedEvents();

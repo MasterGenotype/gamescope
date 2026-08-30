@@ -11,6 +11,7 @@
 #include <bitset>
 #include <mutex>
 #include <optional>
+#include <thread>
 
 #include "main.hpp"
 
@@ -294,7 +295,6 @@ struct FrameInfo_t
 
 	bool dpms;
 
-	int layerCount;
 	struct Layer_t
 	{
 		gamescope::Rc<CVulkanTexture> tex;
@@ -357,31 +357,73 @@ struct FrameInfo_t
 			float y = offset.y + 0.5f / scale.y;
 			return { x, y };
 		}
-	} layers[ k_nMaxLayers ];
+	};
+
+	class LayerStack_t
+	{
+	public:
+		Layer_t *push()
+		{
+			if ( m_nCount >= k_nMaxLayers )
+				return nullptr;
+
+			return &m_Layers[ m_nCount++ ];
+		}
+
+		void pop()
+		{
+			assert( m_nCount > 0 );
+			m_nCount--;
+		}
+
+		void truncate( int nCount )
+		{
+			assert( nCount >= 0 && nCount <= m_nCount );
+			m_nCount = nCount;
+		}
+
+		int count() const { return m_nCount; }
+
+		Layer_t &get( int nIndex )
+		{
+			assert( nIndex >= 0 && nIndex < m_nCount );
+			return m_Layers[ nIndex ];
+		}
+
+		const Layer_t &get( int nIndex ) const
+		{
+			assert( nIndex >= 0 && nIndex < m_nCount );
+			return m_Layers[ nIndex ];
+		}
+
+	private:
+		Layer_t m_Layers[ k_nMaxLayers ];
+		int m_nCount = 0;
+	} layers;
 
 	uint32_t borderMask() const {
 		uint32_t result = 0;
-		for (int i = 0; i < layerCount; i++)
+		for (int i = 0; i < layers.count(); i++)
 		{
-			if (layers[ i ].blackBorder)
+			if (layers.get( i ).blackBorder)
 				result |= 1 << i;
 		}
 		return result;
 	}
 	uint32_t ycbcrMask() const {
 		uint32_t result = 0;
-		for (int i = 0; i < layerCount; i++)
+		for (int i = 0; i < layers.count(); i++)
 		{
-			if (layers[ i ].isYcbcr())
+			if (layers.get( i ).isYcbcr())
 				result |= 1 << i;
 		}
 		return result;
 	}
 	uint32_t colorspaceMask() const {
 		uint32_t result = 0;
-		for (int i = 0; i < layerCount; i++)
+		for (int i = 0; i < layers.count(); i++)
 		{
-result |= layers[ i ].colorspace << (i * GamescopeAppTextureColorspace_Bits);
+			result |= layers.get( i ).colorspace << (i * GamescopeAppTextureColorspace_Bits);
 		}
 		return result;
 	}
@@ -414,6 +456,8 @@ std::optional<uint64_t> vulkan_composite( struct FrameInfo_t *frameInfo, gamesco
 void vulkan_wait( uint64_t ulSeqNo, bool bReset );
 gamescope::Rc<CVulkanTexture> vulkan_get_last_output_image( bool partial, bool defer );
 gamescope::Rc<CVulkanTexture> vulkan_acquire_screenshot_texture(uint32_t width, uint32_t height, bool exportable, uint32_t drmFormat, EStreamColorspace colorspace = k_EStreamColorspace_Unknown);
+gamescope::Rc<CVulkanTexture> vulkan_acquire_capture_texture(uint32_t width, uint32_t height, bool exportable, uint32_t drmFormat, EStreamColorspace colorspace = k_EStreamColorspace_Unknown);
+uint32_t vulkan_get_rgb10_capture_format( void );
 
 void vulkan_present_to_window( void );
 
@@ -539,7 +583,8 @@ struct VulkanOutput_t
 	uint32_t uOutputFormat = DRM_FORMAT_INVALID;
 	uint32_t uOutputFormatOverlay = DRM_FORMAT_INVALID;
 
-	std::array<gamescope::OwningRc<CVulkanTexture>, 2> pScreenshotImages;
+	std::array<gamescope::OwningRc<CVulkanTexture>, 2> pScreenshotTextures;
+	std::array<gamescope::OwningRc<CVulkanTexture>, 2> pCaptureTextures;
 
 	// NIS and FSR
 	gamescope::OwningRc<CVulkanTexture> tmpOutput;
@@ -810,6 +855,7 @@ public:
 	inline bool hasDrmPrimaryDevId() {return m_bHasDrmPrimaryDevId;}
 	inline dev_t primaryDevId() {return m_drmPrimaryDevId;}
 	inline bool supportsFp16() {return m_bSupportsFp16;}
+	inline std::vector<VkExtensionProperties>& supportedExtensions() {return m_supportedExts;}
 
 	inline std::pair<void *, uint32_t> uploadBufferData(uint32_t size)
 	{
@@ -849,7 +895,7 @@ protected:
 	bool createShaders();
 	bool createScratchResources();
 	VkPipeline compilePipeline(uint32_t layerCount, uint32_t ycbcrMask, ShaderType type, uint32_t blur_layer_count, uint32_t composite_debug, uint32_t colorspace_mask, uint32_t output_eotf, bool itm_enable);
-	void compileAllPipelines();
+	void compileAllPipelines(std::stop_token st);
 
 	VkDevice m_device = nullptr;
 	VkPhysicalDevice m_physDev = nullptr;
@@ -900,6 +946,10 @@ protected:
 	std::atomic<uint64_t> m_submissionSeqNo = { 0 };
 	std::vector<std::unique_ptr<CVulkanCmdBuffer>> m_unusedCmdBufs;
 	std::map<uint64_t, std::unique_ptr<CVulkanCmdBuffer>> m_pendingCmdBufs;
+
+private:
+	std::vector<VkExtensionProperties> m_supportedExts;
+	std::jthread m_pipelineThread;
 };
 
 struct TextureState
@@ -1001,5 +1051,10 @@ gamescope::OwningRc<CVulkanTexture> vulkan_create_flat_texture( uint32_t width, 
 bool vulkan_supports_hdr10();
 
 void vulkan_wait_idle();
+
+// Whether the driver implements VK_EXT_physical_device_drm
+bool vulkan_has_drm_props();
+
+bool vulkan_has_drm_modifiers_for_features(VkFormat format, VkFormatFeatureFlags features);
 
 extern CVulkanDevice g_device;

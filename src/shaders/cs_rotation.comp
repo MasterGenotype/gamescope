@@ -49,5 +49,12 @@ void main() {
     // Rotate the pixel coordinates counter-clockwise by 90 degrees
     ivec2 rotatedCoord = ivec2(coord.y, outWidth - coord.x - 1);
 
+    // This shader only runs with the panel orientation forced to 0 or 180
+    // (CDRMConnector::UpdateEffectiveOrientation), so the only residual
+    // rotation the compositor can be asked for on top of the 90 above is
+    // 180 degrees. Compose it in rather than silently dropping it.
+    if (u_rotation == 2u)
+        rotatedCoord = ivec2(outSize) - 1 - rotatedCoord;
+
     imageStore(dst, rotatedCoord, outputValue);
 }
